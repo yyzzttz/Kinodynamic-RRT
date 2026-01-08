@@ -1,0 +1,46 @@
+FUNCTION RRT_KINODYNAMIC_CONNECT(x_start, x_goal, dt, goal_eps, max_iters, max_control_effort):
+
+    # 1. 初始化单棵树 T，从起点状态出发
+    T ← empty tree
+    root ← NewNode(x_start)         # x_start = (q_start, v_start)
+    root.parent ← NULL
+    AddNode(T, root)
+
+    # 2. 外层主循环
+    FOR k FROM 1 TO max_iters DO
+
+        # 2.1 像普通 kinodynamic RRT 一样，随机探索状态空间
+        x_rand ← SampleState()      # x_rand = (q_rand, v_rand)
+        new_node ← EXTEND_KINODYNAMIC(T, x_rand, dt, max_control_effort)
+        # 这一步和普通单树 kinodynamic RRT 一样，可能失败也可能成功
+
+        # 如果这一步失败，就直接进行下一轮随机采样
+        IF new_node == FAILURE THEN
+            CONTINUE
+
+        # 2.2 在"已经扩展过的树"基础上，尝试用 CONNECT_KINODYNAMIC 朝 x_goal 靠近
+        (status, last_node) ← CONNECT_KINODYNAMIC(T, x_goal,
+                                                  dt, goal_eps, max_control_effort)
+
+        # 如果 CONNECT_KINODYNAMIC 成功一路冲到 x_goal 附近，就结束
+        IF status == "REACHED" THEN
+
+            # 通过 last_node 回溯出从 x_start 到 x_goal 的路径
+            # 每个节点都包含其轨迹，所以可以重构完整的控制序列
+            path ← BacktracePath(last_node)
+            RETURN path      # 算法结束
+
+        # 否则（TRAPPED），说明在当前树结构下，
+        # 再往 x_goal 方向已经违反动力学约束或撞障走不动 → 下一轮 FOR 再随机探索别的地方
+        # 进入下一个 k
+
+    END FOR
+
+    # 超过 max_iters 还没连接到 x_goal
+    RETURN FAILURE
+END FUNCTION
+
+这里是完整的单树条件下把connect_kinodynamic放到每个采样迭代里形成完整的过程。
+每个迭代里connect_kinodynamic返回trapped时说明这次connect里某个extend存在遇到动力学约束违反或障碍，这一次connect都会退出并进入下一个for进入下一次随机探索（continue效果），如果reached了就返回路径。
+与几何RRT-Connect的关键区别：所有连接必须通过可行动力学轨迹和有效控制序列来完成。
+

@@ -1,0 +1,40 @@
+FUNCTION CONNECT(T, q_target, step_size, goal_eps):
+    # T: current tree (single tree)
+    # q_target: fixed target (can be q_goal, or any point)
+    # step_size: single step size
+    # goal_eps: distance threshold for determining "reached q_target"
+    # returns: (status, last_node)
+    #   status ∈ {"REACHED", "TRAPPED"}
+    #   last_node: the last node successfully added to the tree (may be NULL)
+
+    last_node ← NULL
+
+    WHILE TRUE DO
+        # Each iteration: on current tree T, try to take one step towards q_target
+        # Always remember that this function returns either failure or new_node after taking one step
+        new_node ← EXTEND_BASIC(T, q_target, step_size)
+
+        # ---- Exit condition 1: TRAPPED ----
+        IF new_node == FAILURE THEN
+            # Indicates that going further towards q_target would hit obstacle → cannot proceed
+            RETURN ("TRAPPED", last_node)
+
+        # Took a small step, record the latest node
+        last_node ← new_node
+
+        # ---- Exit condition 2: REACHED ----
+        IF Distance(new_node.q, q_target) < goal_eps THEN
+            # Already close enough to q_target → considered reached
+            RETURN ("REACHED", last_node)
+
+        # ---- Otherwise: continue while ----
+        # Meaning:
+        # Can still proceed, and still far from target → next while iteration calls EXTEND_BASIC again
+        # Continue taking one step based on the new tree structure
+    END WHILE
+END FUNCTION
+
+CONNECT is evolved from EXTEND_BASIC which only takes one step, to walking towards q_rand as much as possible until it cannot proceed.
+For the sampled q_rand, each step either hits an obstacle (trapped, corresponding to failure in extend_basic), or newnode is close enough to q_goal (reached), or it hasn't reached yet and can still proceed (advanced, in which case the loop continues).
+Advanced only serves as an intermediate state to control continuous stepping, and will eventually only return either trapped or reached.
+

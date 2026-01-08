@@ -1,0 +1,28 @@
+FUNCTION EXTEND_BASIC(T, q_target, step_size):
+    # T: 当前树，包含若干节点
+    # q_target: 目标方向（可以是随机点 q_rand，也可以是 q_goal），一般是此方法外部本轮循环采样的那个q_rand
+    # step_size: 单步步长
+    # 返回：新节点 new_node 或 FAILURE
+
+    # 1. 找到树中距离 q_target 最近的节点
+    q_near ← Nearest(T, q_target)
+
+    # 2. 从 q_near 朝 q_target 方向走一步（距离不超过 step_size）
+    q_new  ← Steer(q_near, q_target, step_size)
+
+    # 3. 检查从 q_near 到 q_new 的这段轨迹是否无碰撞
+    IF CollisionFree(q_near, q_new) == FALSE THEN
+        RETURN FAILURE              # 一步都走不出去 → 扩展失败，函数结束，不会执行下面添加节点的步骤
+
+    # 4. 可以走，则把新节点插入树中
+    new_node ← NewNode(q_new)
+    new_node.parent ← q_near
+    AddNode(T, new_node)
+
+    RETURN new_node                 # 扩展成功，返回新节点，函数结束
+END FUNCTION
+
+这个方法函数是基于一个初始化的树T和一个目标点q_target的extend单步步进逻辑。
+传入（树T，目标点q_target，步长），可以完成树T朝目标点q_target接近一步的操作，
+会先判断这一步的轨迹有无碰撞，
+有碰撞直接跳出方法，结束这一个接近操作，并传回failure；无碰撞就正常接近然后把节点和边放入树內，并传回步进后最新这个节点new_node。

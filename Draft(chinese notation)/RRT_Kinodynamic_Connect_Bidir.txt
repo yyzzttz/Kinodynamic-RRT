@@ -1,0 +1,67 @@
+FUNCTION RRT_KINODYNAMIC_CONNECT_BIDIR(x_start, x_goal,
+                                       dt, connect_eps,
+                                       max_iters, max_control_effort):
+
+    # 1. 初始化两棵树
+    T_a ← empty tree
+    T_b ← empty tree
+
+    root_a ← NewNode(x_start)       # x_start = (q_start, v_start)
+    root_b ← NewNode(x_goal)        # x_goal = (q_goal, v_goal)
+
+    AddNode(T_a, root_a)
+    AddNode(T_b, root_b)
+
+    # 2. 外层迭代循环：最多执行 max_iters 次
+    FOR k FROM 1 TO max_iters DO
+
+        # 2.1 采样
+        x_rand ← SampleState()      # x_rand = (q_rand, v_rand)
+
+        # ------- 第一步：使用动力学扩展 T_a 向 x_rand 走一步 -------
+        new_node_a ← EXTEND_KINODYNAMIC(T_a, x_rand, dt, max_control_effort)
+
+        IF new_node_a != FAILURE THEN
+
+            # ------- 第二步：用 CONNECT_KINODYNAMIC 让 T_b 使用动力学朝 new_node_a.x 冲 -------
+            (status, new_node_b) ← CONNECT_KINODYNAMIC(T_b,
+                                                       new_node_a.x,
+                                                       dt,
+                                                       connect_eps,
+                                                       max_control_effort)
+
+            # ===== 成功条件：两棵树接上了 → 退出外层 FOR，结束算法 =====
+            IF status == "REACHED" THEN
+
+                # 从 new_node_a 回溯 start → meeting point 的路径
+                path_a ← BacktracePath(new_node_a)    # 在 T_a 上，包含所有轨迹
+
+                # 从 new_node_b 回溯 goal → meeting point 的路径
+                path_b ← BacktracePath(new_node_b)    # 在 T_b 上，包含所有轨迹
+
+                # path_b 是 goal→meeting，反转成 meeting→goal
+                # 注意：反转时也需要反转控制序列
+                path_b ← REVERSE(path_b)
+
+                # 合并两部分路径（注意中间节点去重）
+                IF path_a.last == path_b.first THEN
+                    path_b ← path_b WITHOUT FIRST ELEMENT
+
+                full_path ← CONCAT(path_a, path_b)
+
+                RETURN full_path   # 整个 RRT-Kinodynamic-Connect 算法结束
+
+        # 2.2 这一轮没接上 → 交换两棵树，下一轮换角色
+        SWAP(T_a, T_b)
+
+    END FOR
+
+    # 3. 超过 max_iters 仍未找到连接
+    RETURN FAILURE
+END FUNCTION
+
+这个双向kinodynamic RRT-Connect算法从起点和终点状态同时扩展。
+每次扩展必须尊重系统动力学并生成有效的控制序列。
+当一棵树在位置和速度空间都达到另一棵树扩展节点的指定容差范围内时，连接成功。
+与几何双向RRT-Connect的关键区别：所有连接都通过可行动力学轨迹完成，最终路径包含用于执行的完整控制序列。
+

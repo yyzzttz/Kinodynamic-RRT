@@ -1,0 +1,48 @@
+FUNCTION RRT_KINODYNAMIC_CONNECT(x_start, x_goal, dt, goal_eps, max_iters, max_control_effort):
+
+    # 1. Initialize single tree T, starting from start state
+    T ← empty tree
+    root ← NewNode(x_start)         # x_start = (q_start, v_start)
+    root.parent ← NULL
+    AddNode(T, root)
+
+    # 2. Outer main loop
+    FOR k FROM 1 TO max_iters DO
+
+        # 2.1 Like ordinary kinodynamic RRT, randomly explore the state space
+        x_rand ← SampleState()      # x_rand = (q_rand, v_rand)
+        new_node ← EXTEND_KINODYNAMIC(T, x_rand, dt, max_control_effort)
+        # This step is the same as ordinary single-tree kinodynamic RRT, may fail or succeed
+
+        # If this step fails, directly proceed to next random sampling
+        IF new_node == FAILURE THEN
+            CONTINUE
+
+        # 2.2 On the basis of "already extended tree", try to use CONNECT_KINODYNAMIC to approach x_goal
+        (status, last_node) ← CONNECT_KINODYNAMIC(T, x_goal,
+                                                  dt, goal_eps, max_control_effort)
+
+        # If CONNECT_KINODYNAMIC successfully rushes all the way to near x_goal, end
+        IF status == "REACHED" THEN
+
+            # Backtrace path from x_start to x_goal through last_node
+            # Each node contains its trajectory, so full control sequence can be reconstructed
+            path ← BacktracePath(last_node)
+            RETURN path      # algorithm ends
+
+        # Otherwise (TRAPPED), indicates that under current tree structure,
+        # going further towards x_goal direction violates dynamics constraints or has hit obstacle and cannot proceed 
+        # → next FOR iteration explores elsewhere randomly
+        # enter next k
+
+    END FOR
+
+    # Exceeded max_iters without connecting to x_goal
+    RETURN FAILURE
+END FUNCTION
+
+This is the complete process of putting connect_kinodynamic into each sampling iteration under single-tree condition to form a complete procedure.
+In each iteration, when connect_kinodynamic returns trapped, it means some extend in this connect encountered dynamics constraint violation or obstacle, 
+this connect will exit and enter the next for for the next random exploration (continue effect), if reached then return the path.
+Key difference from geometric RRT-Connect: all connections must be made through feasible dynamics trajectories with valid control sequences.
+

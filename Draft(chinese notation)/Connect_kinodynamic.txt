@@ -1,0 +1,43 @@
+FUNCTION CONNECT_KINODYNAMIC(T, x_target, dt, goal_eps, max_control_effort):
+    # T: 当前树（单棵），节点包含状态 (x, v)
+    # x_target: 固定目标状态（可以是 x_goal，也可以是某个状态）
+    # dt: 轨迹传播的时间步长
+    # goal_eps: 判断"到达 x_target"的距离阈值（同时考虑位置和速度）
+    # max_control_effort: 最大控制输入幅度
+    # 返回：(status, last_node)
+    #   status ∈ {"REACHED", "TRAPPED"}
+    #   last_node: 最后一次成功加入树的节点（可能为 NULL）
+
+    last_node ← NULL
+
+    WHILE TRUE DO
+        # 每一轮：在当前树 T 上，使用动力学向 x_target 方向尝试走一步
+        # 时刻牢记这个函数所返回的东西是failure或者通过动力学步进一步之后的new_node
+        new_node ← EXTEND_KINODYNAMIC(T, x_target, dt, max_control_effort)
+
+        # ---- 退出条件 1：TRAPPED ----
+        IF new_node == FAILURE THEN
+            # 表示再往 x_target 方向多走一点就会违反动力学约束或碰障 → 走不动了
+            RETURN ("TRAPPED", last_node)
+
+        # 通过动力学走出了一小步，记录最新节点
+        last_node ← new_node
+
+        # ---- 退出条件 2：REACHED ----
+        IF Distance(new_node.x, x_target.x) < goal_eps.position AND 
+           Distance(new_node.v, x_target.v) < goal_eps.velocity THEN
+            # 已经在位置和速度上都足够接近 x_target → 认为到达
+            RETURN ("REACHED", last_node)
+
+        # ---- 否则：继续 while ----
+        #意思是：
+        # 还能走，而且离目标还远 → 下一轮 while 再次调用 EXTEND_KINODYNAMIC
+        # 在新的树结构基础上使用动力学继续走一步
+    END WHILE
+END FUNCTION
+
+CONNECT_KINODYNAMIC是在extend_kinodynamic只步进一步的基础上演变成朝x_rand尽可能多地走，使用可行动力学轨迹直到走不动为止。
+对于被采中的x_rand，每一次步进要么违反动力学约束或碰障碍trapped（对应extend_kinodynamic里的failure），要么newnode在位置和速度上都离x_goal够近reached，要么就是还没到还能走advanced（此种情况继续执行循环）。
+advanced只作为一种中间状态控制持续步进，最终也只会return trapped或者reached两种结果。
+与几何CONNECT的关键区别：所有步进必须尊重系统动力学并生成有效的控制序列。
+

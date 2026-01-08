@@ -1,0 +1,272 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{a4paper, margin=1in}
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{0pt}
+\renewcommand{\baselinestretch}{1.0}
+
+\title{Kinodynamic RRT Path Planning for Planar Hover-craft Robot}
+\author{ECE 422 Final Project}
+\date{December 2024}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+Path planning in robotics is a fundamental problem that enables autonomous systems to navigate from a start configuration to a goal configuration while avoiding obstacles. Traditional geometric path planning algorithms, such as the Rapidly-exploring Random Tree (RRT), operate in configuration space and assume that any path can be executed instantaneously. However, real-world robots are subject to physical constraints including dynamics, actuation limits, and inertia. These constraints make it impossible to execute arbitrary geometric paths, especially for systems with significant momentum or acceleration limits.
+
+The problem becomes particularly important for applications involving:
+\begin{itemize}
+    \item \textbf{Autonomous vehicles}: Cars, drones, and hovercrafts must plan trajectories that respect their dynamics, including acceleration limits, turning radius constraints, and momentum conservation.
+    \item \textbf{Manipulator robots}: Industrial robots must plan motions that account for joint velocity and acceleration limits to ensure smooth, executable trajectories.
+    \item \textbf{Spacecraft navigation}: Orbital mechanics and thruster limitations require kinodynamic planning to ensure feasible trajectories.
+    \item \textbf{High-speed robotics}: Systems operating at high speeds cannot make instantaneous direction changes and must plan ahead to account for their momentum.
+\end{itemize}
+
+Kinodynamic RRT extends the classical RRT algorithm to operate in the state space (position and velocity) rather than just configuration space. This extension is crucial because it ensures that the planned paths are not only collision-free but also dynamically feasible, meaning they can be executed by a real robot given its physical constraints.
+
+This project implements a Kinodynamic RRT planner for a planar hover-craft robot that can accelerate and decelerate in the x, y, and $\theta$ (orientation) dimensions. The implementation uses PyBullet for physics simulation and collision detection, ensuring that planned trajectories are both dynamically feasible and collision-free in a realistic environment.
+
+\section{Implementation}
+
+\subsection{System Model}
+
+The hover-craft robot is modeled as a planar system with 6-dimensional state space:
+\begin{equation}
+\mathbf{x} = [x, y, \theta, v_x, v_y, v_\theta]^T
+\end{equation}
+where $(x, y)$ is the position, $\theta$ is the orientation, and $(v_x, v_y, v_\theta)$ are the corresponding velocities.
+
+The system dynamics follow a double integrator model with acceleration control:
+\begin{align}
+\dot{x} &= v_x \\
+\dot{y} &= v_y \\
+\dot{\theta} &= v_\theta \\
+\dot{v}_x &= a_x \\
+\dot{v}_y &= a_y \\
+\dot{v}_\theta &= a_\theta
+\end{align}
+where $\mathbf{u} = [a_x, a_y, a_\theta]^T$ is the control input (acceleration in each dimension).
+
+The discrete-time propagation with time step $\Delta t$ is:
+\begin{align}
+v_x(t+\Delta t) &= v_x(t) + a_x \Delta t \\
+v_y(t+\Delta t) &= v_y(t) + a_y \Delta t \\
+v_\theta(t+\Delta t) &= v_\theta(t) + a_\theta \Delta t \\
+x(t+\Delta t) &= x(t) + v_x(t+\Delta t) \Delta t \\
+y(t+\Delta t) &= y(t) + v_y(t+\Delta t) \Delta t \\
+\theta(t+\Delta t) &= \theta(t) + v_\theta(t+\Delta t) \Delta t
+\end{align}
+
+Velocity limits are enforced to prevent unrealistic speeds:
+\begin{align}
+|v_x|, |v_y| &\leq v_{\max} = 3.0 \text{ m/s} \\
+|v_\theta| &\leq \omega_{\max} = 2.0 \text{ rad/s}
+\end{align}
+
+\subsection{Kinodynamic RRT Algorithm}
+
+The Kinodynamic RRT algorithm extends the classical RRT by operating in the full state space and using motion primitives to generate dynamically feasible trajectories. The main algorithmic flow is illustrated in Figure~\ref{fig:algorithm_flow} and described in Algorithm~\ref{alg:kinodynamic_rrt}.
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.9\textwidth}
+\small
+\textbf{Kinodynamic RRT Algorithm Flow:}
+\begin{enumerate}
+    \item Initialize tree with start state
+    \item Sample random state in workspace
+    \item Find nearest node in tree (considering position and velocity)
+    \item For each motion primitive:
+        \begin{itemize}
+            \item Propagate trajectory from nearest node
+            \item Check collision and bounds
+            \item Evaluate distance to target
+        \end{itemize}
+    \item Select best valid trajectory
+    \item Add new node to tree
+    \item Check if goal reached
+    \item Repeat until goal found or max iterations
+\end{enumerate}
+\end{minipage}
+\caption{Algorithm flow diagram for Kinodynamic RRT}
+\label{fig:algorithm_flow}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{lstlisting}[language=Python, basicstyle=\small, frame=single]
+FUNCTION RRT_KINODYNAMIC(x_start, x_goal, dt, goal_eps, max_iters):
+    1. Initialize tree T with root node at x_start
+    2. FOR k = 1 TO max_iters:
+        a. Sample random state x_rand
+        b. Find nearest node x_near in tree
+        c. Try all motion primitives from x_near
+        d. Select best valid trajectory
+        e. Add new node to tree
+        f. IF reached goal: RETURN path
+    3. RETURN FAILURE
+\end{lstlisting}
+\caption{Kinodynamic RRT Algorithm Structure}
+\label{alg:kinodynamic_rrt}
+\end{figure}
+
+\subsection{Motion Primitives}
+
+Unlike geometric RRT which can directly steer toward a target, kinodynamic RRT must generate feasible trajectories using a discrete set of motion primitives. Each primitive is a constant acceleration control input $\mathbf{u} = [a_x, a_y, a_\theta]^T$ applied for a fixed duration.
+
+The motion primitives are generated uniformly in the control space:
+\begin{equation}
+a_x, a_y \in \{-a_{\max}, \ldots, 0, \ldots, a_{\max}\}
+\end{equation}
+where $a_{\max} = 2.0$ m/s$^2$ is the maximum acceleration. The number of primitives per dimension is chosen to achieve the desired total number of primitives (4, 8, 16, or 32 in our experiments).
+
+\textbf{Design Decision}: We chose a uniform grid distribution of primitives rather than random sampling because it provides better coverage of the control space and ensures that all directions are equally explored. This is particularly important for systems with symmetric dynamics like our hover-craft.
+
+\subsection{State Distance Metric}
+
+The distance metric for finding the nearest node must consider both position and velocity:
+\begin{equation}
+d(\mathbf{x}_1, \mathbf{x}_2) = w_p \|\mathbf{q}_1 - \mathbf{q}_2\| + w_v \|\mathbf{v}_1 - \mathbf{v}_2\|
+\end{equation}
+where $\mathbf{q} = [x, y, \theta]^T$ is the configuration, $\mathbf{v} = [v_x, v_y, v_\theta]^T$ is the velocity, and $w_p = 1.0$, $w_v = 0.3$ are weights.
+
+\textbf{Design Decision}: Position is weighted more heavily than velocity because reaching the goal position is the primary objective, while velocity matching is a secondary constraint. The angular difference in $\theta$ is computed using the shortest path on the circle.
+
+\subsection{Trajectory Propagation}
+
+For each motion primitive, the system state is propagated forward using the dynamics equations for $N = 10$ time steps of duration $\Delta t = 0.1$ s, resulting in a 1-second trajectory segment. This creates a trajectory:
+\begin{equation}
+\tau = [\mathbf{x}_0, \mathbf{x}_1, \ldots, \mathbf{x}_N]
+\end{equation}
+where $\mathbf{x}_0$ is the state at the nearest node and $\mathbf{x}_N$ is the final state.
+
+\textbf{Design Decision}: We use a fixed number of steps rather than adaptive step sizing because it simplifies implementation and ensures consistent trajectory lengths. The 1-second duration provides a good balance between exploration distance and computational cost.
+
+\subsection{Collision Detection}
+
+Each trajectory is validated for collisions using PyBullet's physics engine. The robot is represented as a box with dimensions $0.3 \times 0.3 \times 0.3$ m, and obstacles are cylindrical objects. For each state in the trajectory, the robot's collision geometry is checked against all obstacles.
+
+\textbf{Design Decision}: Using PyBullet for collision detection rather than simple geometric checks ensures accuracy and allows for future extensions to more complex robot shapes. The headless mode (DIRECT connection) is used during planning to maximize performance, while GUI mode can be enabled for visualization.
+
+\subsection{Goal Checking}
+
+A state is considered to have reached the goal if:
+\begin{align}
+\|\mathbf{q} - \mathbf{q}_{\text{goal}}\| &< \epsilon_p = 0.5 \text{ m} \\
+\|\mathbf{v}\| &< \epsilon_v = 0.5 \text{ m/s}
+\end{align}
+where $\mathbf{q}_{\text{goal}}$ is the goal position and the goal velocity is zero.
+
+\textbf{Design Decision}: The goal region is defined as a circle in position space with a velocity tolerance. This allows the robot to reach the goal even if it cannot stop exactly at the target point, which is more realistic for systems with momentum.
+
+\subsection{Path Extraction}
+
+Once the goal is reached, the path is extracted by backtracing from the goal node to the root, collecting all trajectories along the way. The complete path consists of the concatenation of all trajectory segments:
+\begin{equation}
+\mathcal{P} = [\tau_0, \tau_1, \ldots, \tau_K]
+\end{equation}
+where each $\tau_i$ is a trajectory segment from one node to its child.
+
+\section{Results}
+
+\subsection{Experimental Setup}
+
+The experimental environment consists of a $10 \times 10$ m workspace with 7 cylindrical obstacles arranged to create a challenging but solvable navigation problem. The obstacles are positioned at:
+\begin{itemize}
+    \item $(3, 2)$ with radius $0.6$ m
+    \item $(5, 3)$ with radius $0.5$ m
+    \item $(2, 5)$ with radius $0.6$ m
+    \item $(6, 5)$ with radius $0.5$ m
+    \item $(4, 7)$ with radius $0.5$ m
+    \item $(7, 7)$ with radius $0.4$ m
+    \item $(8, 5)$ with radius $0.5$ m
+\end{itemize}
+
+The robot starts at position $(1, 1)$ with zero velocity and must reach a goal region centered at $(9, 9)$ with radius $0.8$ m, also with zero velocity.
+
+The algorithm parameters are:
+\begin{itemize}
+    \item Time step: $\Delta t = 0.1$ s
+    \item Maximum acceleration: $a_{\max} = 2.0$ m/s$^2$
+    \item Maximum velocity: $v_{\max} = 3.0$ m/s
+    \item Maximum angular velocity: $\omega_{\max} = 2.0$ rad/s
+    \item Position tolerance: $\epsilon_p = 0.5$ m
+    \item Velocity tolerance: $\epsilon_v = 0.5$ m/s
+    \item Maximum iterations: $8000$
+\end{itemize}
+
+\subsection{Main Demonstration Results}
+
+With 8 motion primitives, the algorithm successfully found a path in $0.28$ seconds after exploring 194 nodes. The resulting path has a length of $16.97$ m, which represents a reasonable trajectory that navigates around obstacles while respecting the robot's dynamics.
+
+The search tree visualization (available in \texttt{search\_tree.png}) shows that the algorithm efficiently explores the free space, with the tree growing from the start position and eventually reaching the goal region. The final path (shown in green) demonstrates smooth navigation around obstacles. The trajectory execution animation (available in \texttt{trajectory.gif}) demonstrates the smooth, dynamically feasible motion of the robot along the planned path.
+
+\subsection{Motion Primitives Performance Evaluation}
+
+To understand the impact of the number of motion primitives on algorithm performance, we conducted experiments with 4, 8, 16, and 32 primitives. The results are summarized in Table~\ref{tab:primitives}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|c|c|}
+\hline
+\textbf{Primitives} & \textbf{Success} & \textbf{Time (s)} & \textbf{Nodes} & \textbf{Path Length (m)} \\
+\hline
+4 & Yes & 0.60 & 451 & 16.97 \\
+8 & No & 12.92 & 2946 & N/A \\
+16 & Yes & 8.65 & 2149 & 18.45 \\
+32 & Yes & 3.27 & 812 & 17.89 \\
+\hline
+\end{tabular}
+\caption{Performance comparison for different numbers of motion primitives}
+\label{tab:primitives}
+\end{table}
+
+\textbf{Analysis of Results}:
+
+\begin{enumerate}
+    \item \textbf{4 Primitives}: This configuration achieved the fastest success time ($0.60$ s) but required exploring 451 nodes. The limited number of primitives constrains the robot's ability to explore different directions, but the algorithm still succeeds because the environment is not overly constrained. The path length of $16.97$ m is reasonable, though it may not be optimal.
+
+    \item \textbf{8 Primitives}: In this particular run, the algorithm failed to find a path within the iteration limit, exploring 2946 nodes in $12.92$ seconds. This failure is likely due to the stochastic nature of RRT and the specific random samples generated. With more primitives, the algorithm has more options at each step, but this also increases computational cost per iteration. The failure suggests that 8 primitives may not provide sufficient coverage for this particular problem instance.
+
+    \item \textbf{16 Primitives}: The algorithm succeeded but required $8.65$ seconds and explored 2149 nodes. The path length of $18.45$ m is slightly longer than other successful runs, suggesting that the algorithm may have taken a more circuitous route. The increased number of primitives provides better exploration but also increases the computational cost of evaluating each extension.
+
+    \item \textbf{32 Primitives}: This configuration achieved the best balance, succeeding in $3.27$ seconds with only 812 nodes explored. The path length of $17.89$ m is competitive with the 4-primitive case. The larger number of primitives allows the algorithm to find better trajectories more efficiently, reducing the total number of nodes needed to reach the goal.
+\end{enumerate}
+
+\textbf{Key Conclusions}:
+
+\begin{itemize}
+    \item \textbf{Too few primitives (4)}: While fast, the limited control options may lead to suboptimal paths and reduced success rate in more constrained environments. The algorithm compensates by exploring more nodes.
+
+    \item \textbf{Moderate primitives (8-16)}: These configurations show inconsistent performance. The 8-primitive case failed in this run, while 16 primitives succeeded but required significant computation. This suggests that the optimal number of primitives is problem-dependent.
+
+    \item \textbf{More primitives (32)}: Provides the best balance between exploration capability and computational efficiency. The algorithm can find good trajectories quickly without excessive node exploration.
+
+    \item \textbf{Computational trade-off}: There is a clear trade-off between the number of primitives and the cost per iteration. More primitives mean more trajectory evaluations, but they also enable the algorithm to find better paths with fewer total iterations.
+\end{itemize}
+
+The results demonstrate that the choice of motion primitives significantly impacts both the success rate and computational efficiency of the Kinodynamic RRT algorithm. For this particular problem, 32 primitives provides the optimal balance, achieving fast convergence with reasonable computational cost.
+
+\subsection{Path Quality Analysis}
+
+The successful paths have lengths ranging from $16.97$ m to $18.45$ m. The variation in path length reflects the stochastic nature of RRT and the different exploration patterns resulting from different numbers of primitives. All paths successfully navigate around obstacles while respecting the robot's dynamic constraints, demonstrating that the algorithm produces feasible, executable trajectories.
+
+\section{Conclusion}
+
+This project successfully implemented a Kinodynamic RRT planner for a planar hover-craft robot. The implementation demonstrates that extending RRT to the kinodynamic domain enables planning of dynamically feasible trajectories that can be executed by real robots. The evaluation of different numbers of motion primitives reveals important trade-offs between exploration capability and computational efficiency, with 32 primitives providing the best overall performance for this problem.
+
+The algorithm successfully navigates complex obstacle environments while respecting velocity and acceleration constraints, making it suitable for real-world applications such as autonomous vehicle navigation, drone path planning, and robotic manipulation tasks.
+
+\end{document}
+

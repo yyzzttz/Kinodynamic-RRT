@@ -1,0 +1,40 @@
+FUNCTION RRT_SINGLE_EXTEND(q_start, q_goal,step_size, goal_eps, max_iters):
+
+    # 1. Initialize tree T, root node is q_start
+    T ← empty tree
+    root ← NewNode(q_start)
+    root.parent ← NULL
+    AddNode(T, root)
+
+    # 2. Outer main loop: iterate at most max_iters times, this loop does random sampling of a q_rand each iteration to make existing tree T approach it
+    FOR k FROM 1 TO max_iters DO
+
+        # 2.1 Randomly sample a configuration q_rand
+        q_rand ← SampleConfig()
+
+        # 2.2 Use EXTEND_BASIC to extend one step towards q_rand direction.
+        # This step return value is (1) failure, corresponding to collision detected in extend_basic, didn't take this step, then correspondingly in RRT extend this iteration fails, jump to next iteration, re-select q_rand, do extend again
+        # This step return value is (2) new_node, corresponding to no collision in extend_basic, successfully stepped, and extended the tree. Then enter the next judgment of whether this step is close enough to q_rand
+        new_node ← EXTEND_BASIC(T, q_rand, step_size)
+
+        # Corresponding to return value (1). If this step extension fails (immediately hits obstacle), do nothing this iteration, enter next iteration
+        IF new_node == FAILURE THEN
+            CONTINUE
+
+        # Corresponding to return value (2). Now judge whether this extend is close enough to q_goal
+        # 2.3 If new node is already close enough to target q_goal, end
+        IF Distance(new_node.q, q_goal) < goal_eps THEN
+
+            # Backtrace complete path from new_node along parent pointers
+            path ← BacktracePath(new_node)   # get sequence q_start → new_node
+            RETURN path                      # entire algorithm ends
+
+    END FOR
+
+    # Exceeded max_iters still cannot find node close to q_goal
+    RETURN FAILURE
+END FUNCTION
+
+The extend method here completely calls extend_basic in a loop, each loop iteration samples q_rand as target point to extend, and judges whether the collision-free new_node is close enough to q_goal
+Exit conditions: when some iteration finds new_node is close enough to q_goal, succeed and exit; after running max_iter without forming a connected tree, fail and exit
+

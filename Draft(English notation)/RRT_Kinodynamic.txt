@@ -1,0 +1,49 @@
+FUNCTION RRT_KINODYNAMIC(x_start, x_goal, dt, goal_eps, max_iters, max_control_effort):
+
+    # 1. Initialize tree T, root node is x_start (contains both position and velocity)
+    T ← empty tree
+    root ← NewNode(x_start)         # x_start = (q_start, v_start)
+    root.parent ← NULL
+    AddNode(T, root)
+
+    # 2. Outer main loop: iterate at most max_iters times, this loop does random sampling of an x_rand each iteration to make existing tree T approach it
+    FOR k FROM 1 TO max_iters DO
+
+        # 2.1 Randomly sample a state x_rand (both position and velocity in valid ranges)
+        x_rand ← SampleState()      # x_rand = (q_rand, v_rand), both sampled randomly
+
+        # 2.2 Use EXTEND_KINODYNAMIC to extend one step towards x_rand direction.
+        # This step return value is (1) failure, corresponding to invalid trajectory detected in extend_kinodynamic 
+        # (collision or dynamics constraint violation), didn't take this step, then correspondingly in RRT kinodynamic 
+        # this iteration fails, jump to next iteration, re-select x_rand, do extend again
+        # This step return value is (2) new_node, corresponding to valid trajectory in extend_kinodynamic, 
+        # successfully stepped through dynamics, and extended the tree. Then enter the next judgment of whether 
+        # this step is close enough to x_goal
+        new_node ← EXTEND_KINODYNAMIC(T, x_rand, dt, max_control_effort)
+
+        # Corresponding to return value (1). If this step extension fails (invalid trajectory), do nothing this iteration, enter next iteration
+        IF new_node == FAILURE THEN
+            CONTINUE
+
+        # Corresponding to return value (2). Now judge whether this extend is close enough to x_goal
+        # 2.3 If new node is already close enough to target x_goal (considering both position and velocity), end
+        IF Distance(new_node.x, x_goal.x) < goal_eps.position AND 
+           Distance(new_node.v, x_goal.v) < goal_eps.velocity THEN
+
+            # Backtrace complete path from new_node along parent pointers
+            # Each node stores its trajectory, so we can reconstruct the full control sequence
+            path ← BacktracePath(new_node)   # get sequence x_start → new_node with all trajectories
+            RETURN path                      # entire algorithm ends
+
+    END FOR
+
+    # Exceeded max_iters still cannot find node close to x_goal
+    RETURN FAILURE
+END FUNCTION
+
+The kinodynamic extend method here completely calls extend_kinodynamic in a loop, each loop iteration samples x_rand (state with both position and velocity) as target point to extend, 
+and judges whether the valid-trajectory new_node is close enough to x_goal in both position and velocity space.
+Exit conditions: when some iteration finds new_node is close enough to x_goal in both position and velocity, succeed and exit; 
+after running max_iter without forming a connected tree, fail and exit.
+Key difference from geometric RRT: nodes contain full state (position + velocity), and extensions must respect system dynamics through trajectory propagation.
+

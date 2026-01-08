@@ -1,0 +1,60 @@
+FUNCTION RRT_CONNECT_BIDIR(q_start, q_goal,
+                           step_size, connect_eps,
+                           max_iters):
+
+    # 1. Initialize two trees
+    T_a ← empty tree
+    T_b ← empty tree
+
+    root_a ← NewNode(q_start)
+    root_b ← NewNode(q_goal)
+
+    AddNode(T_a, root_a)
+    AddNode(T_b, root_b)
+
+    # 2. Outer iteration loop: execute at most max_iters times
+    FOR k FROM 1 TO max_iters DO
+
+        # 2.1 Sampling
+        q_rand ← SampleConfig()
+
+        # ------- Step 1: Extend T_a one step towards q_rand -------
+        new_node_a ← EXTEND_BASIC(T_a, q_rand, step_size)
+
+        IF new_node_a != FAILURE THEN
+
+            # ------- Step 2: Use CONNECT to make T_b rush towards new_node_a.q -------
+            (status, new_node_b) ← CONNECT(T_b,
+                                           new_node_a.q,
+                                           step_size,
+                                           connect_eps)
+
+            # ===== Success condition: two trees connected → exit outer FOR, end algorithm =====
+            IF status == "REACHED" THEN
+
+                # Backtrace path from new_node_a: start → meeting point
+                path_a ← BacktracePath(new_node_a)    # on T_a
+
+                # Backtrace path from new_node_b: goal → meeting point
+                path_b ← BacktracePath(new_node_b)    # on T_b
+
+                # path_b is goal→meeting, reverse to meeting→goal
+                path_b ← REVERSE(path_b)
+
+                # Merge the two path parts (note: remove duplicate middle node)
+                IF path_a.last == path_b.first THEN
+                    path_b ← path_b WITHOUT FIRST ELEMENT
+
+                full_path ← CONCAT(path_a, path_b)
+
+                RETURN full_path   # entire RRT-Connect algorithm ends
+
+        # 2.2 This iteration didn't connect → swap the two trees, switch roles next iteration
+        SWAP(T_a, T_b)
+
+    END FOR
+
+    # 3. Exceeded max_iters without finding connection
+    RETURN FAILURE
+END FUNCTION
+

@@ -1,0 +1,29 @@
+FUNCTION EXTEND_BASIC(T, q_target, step_size):
+    # T: current tree, containing several nodes
+    # q_target: target direction (can be random point q_rand, or q_goal), generally the q_rand sampled in this iteration's external loop
+    # step_size: single step size
+    # returns: new node new_node or FAILURE
+
+    # 1. Find the node in the tree closest to q_target
+    q_near ← Nearest(T, q_target)
+
+    # 2. Take one step from q_near towards q_target direction (distance not exceeding step_size)
+    q_new  ← Steer(q_near, q_target, step_size)
+
+    # 3. Check if the trajectory from q_near to q_new is collision-free
+    IF CollisionFree(q_near, q_new) == FALSE THEN
+        RETURN FAILURE              # Cannot even take one step → extension failed, function ends, will not execute the node addition step below
+
+    # 4. Can proceed, then insert new node into tree
+    new_node ← NewNode(q_new)
+    new_node.parent ← q_near
+    AddNode(T, new_node)
+
+    RETURN new_node                 # Extension successful, return new node, function ends
+END FUNCTION
+
+This method function is the extend single-step logic based on an initialized tree T and a target point q_target.
+Input (tree T, target point q_target, step size), can complete the operation of tree T approaching target point q_target by one step,
+will first check if the trajectory of this step has collision,
+if collision occurs, directly exit the method, end this approach operation, and return failure; if no collision, normally approach and then put the node and edge into the tree, and return the latest node new_node after stepping.
+

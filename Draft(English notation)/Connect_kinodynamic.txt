@@ -1,0 +1,44 @@
+FUNCTION CONNECT_KINODYNAMIC(T, x_target, dt, goal_eps, max_control_effort):
+    # T: current tree (single tree) with nodes containing state (x, v)
+    # x_target: fixed target state (can be x_goal, or any state)
+    # dt: time step for trajectory propagation
+    # goal_eps: distance threshold for determining "reached x_target" (both position and velocity)
+    # max_control_effort: maximum control input magnitude
+    # returns: (status, last_node)
+    #   status ∈ {"REACHED", "TRAPPED"}
+    #   last_node: the last node successfully added to the tree (may be NULL)
+
+    last_node ← NULL
+
+    WHILE TRUE DO
+        # Each iteration: on current tree T, try to take one step towards x_target using dynamics
+        # Always remember that this function returns either failure or new_node after taking one step through dynamics
+        new_node ← EXTEND_KINODYNAMIC(T, x_target, dt, max_control_effort)
+
+        # ---- Exit condition 1: TRAPPED ----
+        IF new_node == FAILURE THEN
+            # Indicates that going further towards x_target would violate dynamics constraints or hit obstacle → cannot proceed
+            RETURN ("TRAPPED", last_node)
+
+        # Took a small step through dynamics, record the latest node
+        last_node ← new_node
+
+        # ---- Exit condition 2: REACHED ----
+        IF Distance(new_node.x, x_target.x) < goal_eps.position AND 
+           Distance(new_node.v, x_target.v) < goal_eps.velocity THEN
+            # Already close enough to x_target in both position and velocity → considered reached
+            RETURN ("REACHED", last_node)
+
+        # ---- Otherwise: continue while ----
+        # Meaning:
+        # Can still proceed, and still far from target → next while iteration calls EXTEND_KINODYNAMIC again
+        # Continue taking one step based on the new tree structure using dynamics
+    END WHILE
+END FUNCTION
+
+CONNECT_KINODYNAMIC is evolved from EXTEND_KINODYNAMIC which only takes one step, to walking towards x_rand as much as possible using feasible dynamics trajectories until it cannot proceed.
+For the sampled x_rand, each step either violates dynamics constraints or hits an obstacle (trapped, corresponding to failure in extend_kinodynamic), 
+or newnode is close enough to x_goal in both position and velocity (reached), or it hasn't reached yet and can still proceed (advanced, in which case the loop continues).
+Advanced only serves as an intermediate state to control continuous stepping through dynamics, and will eventually only return either trapped or reached.
+Key difference from geometric CONNECT: all steps must respect system dynamics and generate valid control sequences.
+

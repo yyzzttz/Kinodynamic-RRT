@@ -1,0 +1,67 @@
+FUNCTION RRT_KINODYNAMIC_CONNECT_BIDIR(x_start, x_goal,
+                                       dt, connect_eps,
+                                       max_iters, max_control_effort):
+
+    # 1. Initialize two trees
+    T_a ← empty tree
+    T_b ← empty tree
+
+    root_a ← NewNode(x_start)       # x_start = (q_start, v_start)
+    root_b ← NewNode(x_goal)        # x_goal = (q_goal, v_goal)
+
+    AddNode(T_a, root_a)
+    AddNode(T_b, root_b)
+
+    # 2. Outer iteration loop: execute at most max_iters times
+    FOR k FROM 1 TO max_iters DO
+
+        # 2.1 Sampling
+        x_rand ← SampleState()      # x_rand = (q_rand, v_rand)
+
+        # ------- Step 1: Extend T_a one step towards x_rand using dynamics -------
+        new_node_a ← EXTEND_KINODYNAMIC(T_a, x_rand, dt, max_control_effort)
+
+        IF new_node_a != FAILURE THEN
+
+            # ------- Step 2: Use CONNECT_KINODYNAMIC to make T_b rush towards new_node_a.x using dynamics -------
+            (status, new_node_b) ← CONNECT_KINODYNAMIC(T_b,
+                                                       new_node_a.x,
+                                                       dt,
+                                                       connect_eps,
+                                                       max_control_effort)
+
+            # ===== Success condition: two trees connected → exit outer FOR, end algorithm =====
+            IF status == "REACHED" THEN
+
+                # Backtrace path from new_node_a: start → meeting point
+                path_a ← BacktracePath(new_node_a)    # on T_a, includes all trajectories
+
+                # Backtrace path from new_node_b: goal → meeting point
+                path_b ← BacktracePath(new_node_b)    # on T_b, includes all trajectories
+
+                # path_b is goal→meeting, reverse to meeting→goal
+                # Note: when reversing, also need to reverse the control sequences
+                path_b ← REVERSE(path_b)
+
+                # Merge the two path parts (note: remove duplicate middle node)
+                IF path_a.last == path_b.first THEN
+                    path_b ← path_b WITHOUT FIRST ELEMENT
+
+                full_path ← CONCAT(path_a, path_b)
+
+                RETURN full_path   # entire RRT-Kinodynamic-Connect algorithm ends
+
+        # 2.2 This iteration didn't connect → swap the two trees, switch roles next iteration
+        SWAP(T_a, T_b)
+
+    END FOR
+
+    # 3. Exceeded max_iters without finding connection
+    RETURN FAILURE
+END FUNCTION
+
+This bidirectional kinodynamic RRT-Connect algorithm extends from both start and goal states simultaneously.
+Each extension must respect system dynamics and generate valid control sequences.
+The connection is successful when one tree reaches the other's extended node within the specified tolerance in both position and velocity space.
+Key difference from geometric bidirectional RRT-Connect: all connections are made through feasible dynamics trajectories, and the final path contains complete control sequences for execution.
+

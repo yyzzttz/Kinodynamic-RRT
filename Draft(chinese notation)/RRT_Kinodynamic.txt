@@ -1,0 +1,45 @@
+FUNCTION RRT_KINODYNAMIC(x_start, x_goal, dt, goal_eps, max_iters, max_control_effort):
+
+    # 1. 初始化树 T，根节点为 x_start（包含位置和速度）
+    T ← empty tree
+    root ← NewNode(x_start)         # x_start = (q_start, v_start)
+    root.parent ← NULL
+    AddNode(T, root)
+
+    # 2. 外层主循环：最多迭代 max_iters 次，这个循环做的是每轮随机采样一个x_rand让已有树T去接近它
+    FOR k FROM 1 TO max_iters DO
+
+        # 2.1 随机采样一个状态 x_rand（位置和速度都在有效范围内）
+        x_rand ← SampleState()      # x_rand = (q_rand, v_rand)，两者都随机采样
+
+        # 2.2 用 EXTEND_KINODYNAMIC 向 x_rand 方向扩展一步。
+        #这一步返回值是（1）failure，对应在extend_kinodynamic中监测到无效轨迹
+        #（碰撞或动力学约束违反），没有走出去这一步，那么对应的在RRT kinodynamic里这一轮就失败了，跳到下一轮去，重新选x_rand，再做extend
+        #这一步返回值是（2）new_node，对应在extend_kinodynamic中有效轨迹，成功通过动力学步进，并扩展了树。那么就进入接下来判断这次步进后有没有足够接近x_goal
+        new_node ← EXTEND_KINODYNAMIC(T, x_rand, dt, max_control_effort)
+
+        # 对应返回值（1）。若这一步扩展失败（无效轨迹），本轮什么也不做，进入下一轮迭代
+        IF new_node == FAILURE THEN
+            CONTINUE
+
+        # 对应返回值（2）。现在来判断这次extend有没有足够接近x_goal
+        # 2.3 如果新节点已经足够接近目标 x_goal（同时考虑位置和速度），就结束
+        IF Distance(new_node.x, x_goal.x) < goal_eps.position AND 
+           Distance(new_node.v, x_goal.v) < goal_eps.velocity THEN
+
+            # 从 new_node 沿 parent 指针回溯完整路径
+            # 每个节点都存储其轨迹，所以我们可以重构完整的控制序列
+            path ← BacktracePath(new_node)   # 得到 x_start → new_node 的序列，包含所有轨迹
+            RETURN path                      # 算法整体结束
+
+    END FOR
+
+    # 超过 max_iters 仍然找不到接近 x_goal 的节点
+    RETURN FAILURE
+END FUNCTION
+
+这里的kinodynamic extend方法就是完整地调用了extend_kinodynamic循环，每次循环迭代采样x_rand（包含位置和速度的状态）作为目标点去extend，
+并判断有效轨迹的new_node是否在位置和速度空间都足够接近x_goal。
+退出条件：当某一轮发现new_node在位置和速度上都足够接近x_goal的时候，成功并退出；跑完max_iter还没有形成连通树，失败并退出。
+与几何RRT的关键区别：节点包含完整状态（位置+速度），扩展必须通过轨迹传播尊重系统动力学。
+

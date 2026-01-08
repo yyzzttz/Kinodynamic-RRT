@@ -1,0 +1,59 @@
+FUNCTION RRT_CONNECT_BIDIR(q_start, q_goal,
+                           step_size, connect_eps,
+                           max_iters):
+
+    # 1. 初始化两棵树
+    T_a ← empty tree
+    T_b ← empty tree
+
+    root_a ← NewNode(q_start)
+    root_b ← NewNode(q_goal)
+
+    AddNode(T_a, root_a)
+    AddNode(T_b, root_b)
+
+    # 2. 外层迭代循环：最多执行 max_iters 次
+    FOR k FROM 1 TO max_iters DO
+
+        # 2.1 采样
+        q_rand ← SampleConfig()
+
+        # ------- 第一步：扩展 T_a 向 q_rand 走一步 -------
+        new_node_a ← EXTEND_BASIC(T_a, q_rand, step_size)
+
+        IF new_node_a != FAILURE THEN
+
+            # ------- 第二步：用 CONNECT 让 T_b 朝 new_node_a.q 冲 -------
+            (status, new_node_b) ← CONNECT(T_b,
+                                           new_node_a.q,
+                                           step_size,
+                                           connect_eps)
+
+            # ===== 成功条件：两棵树接上了 → 退出外层 FOR，结束算法 =====
+            IF status == "REACHED" THEN
+
+                # 从 new_node_a 回溯 start → meeting point 的路径
+                path_a ← BacktracePath(new_node_a)    # 在 T_a 上
+
+                # 从 new_node_b 回溯 goal → meeting point 的路径
+                path_b ← BacktracePath(new_node_b)    # 在 T_b 上
+
+                # path_b 是 goal→meeting，反转成 meeting→goal
+                path_b ← REVERSE(path_b)
+
+                # 合并两部分路径（注意中间节点去重）
+                IF path_a.last == path_b.first THEN
+                    path_b ← path_b WITHOUT FIRST ELEMENT
+
+                full_path ← CONCAT(path_a, path_b)
+
+                RETURN full_path   # 整个 RRT-Connect 算法结束
+
+        # 2.2 这一轮没接上 → 交换两棵树，下一轮换角色
+        SWAP(T_a, T_b)
+
+    END FOR
+
+    # 3. 超过 max_iters 仍未找到连接
+    RETURN FAILURE
+END FUNCTION

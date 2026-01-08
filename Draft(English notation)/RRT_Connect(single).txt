@@ -1,0 +1,45 @@
+FUNCTION RRT_SINGLE_CONNECT(q_start, q_goal,
+                            step_size, goal_eps, max_iters):
+
+    # 1. Initialize single tree T, starting from start point
+    T ← empty tree
+    root ← NewNode(q_start)
+    root.parent ← NULL
+    AddNode(T, root)
+
+    # 2. Outer main loop
+    FOR k FROM 1 TO max_iters DO
+
+        # 2.1 Like ordinary RRT, randomly explore the space
+        q_rand ← SampleConfig()
+        new_node ← EXTEND_BASIC(T, q_rand, step_size)
+        # This step is the same as ordinary single-tree RRT, may fail or succeed
+
+        # If this step fails, directly proceed to next random sampling
+        IF new_node == FAILURE THEN
+            CONTINUE
+
+        # 2.2 On the basis of "already extended tree", try to use CONNECT to approach q_goal
+        (status, last_node) ← CONNECT(T, q_goal,
+                                      step_size, goal_eps)
+
+        # If CONNECT successfully rushes all the way to near q_goal, end
+        IF status == "REACHED" THEN
+
+            # Backtrace path from q_start to q_goal through last_node
+            path ← BacktracePath(last_node)
+            RETURN path      # algorithm ends
+
+        # Otherwise (TRAPPED), indicates that under current tree structure,
+        # going further towards q_goal direction has hit obstacle and cannot proceed → next FOR iteration explores elsewhere randomly
+        # enter next k
+
+    END FOR
+
+    # Exceeded max_iters without connecting to q_goal
+    RETURN FAILURE
+END FUNCTION
+
+This is the complete process of putting connect into each sampling iteration under single-tree condition to form a complete procedure.
+In each iteration, when connect returns trapped, it means some extend in this connect encountered an obstacle, this connect will exit and enter the next for for the next random exploration (continue effect), if reached then return the path.
+
